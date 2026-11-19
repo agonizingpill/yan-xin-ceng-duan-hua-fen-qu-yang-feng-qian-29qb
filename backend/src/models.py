@@ -57,6 +57,7 @@ class Interpretation(Base):
     state:Mapped[str]=mapped_column(String(20),default='queued')
     evidence:Mapped[dict]=mapped_column(JSON,default=dict)
     error:Mapped[str]=mapped_column(String(600),default='')
+    contact_version:Mapped[int]=mapped_column(default=0)
 class Stratum(Base):
     __tablename__='strata'
     __table_args__=(UniqueConstraint('interpretation_id','start_m'),CheckConstraint('start_m>=0 AND end_m>start_m'),)
@@ -66,6 +67,29 @@ class Stratum(Base):
     end_m:Mapped[float]=mapped_column(Float)
     lithology:Mapped[str]=mapped_column(String(100))
     contact_note:Mapped[str]=mapped_column(String(600))
+    # 接触面身份：seq=自上而下第几个内部界面（该层起点），epoch 每次改动递增，
+    # signature 由界面深度/上下岩性/勘验依据共同决定。签认必须同时匹配 epoch 与 signature。
+    contact_epoch:Mapped[int]=mapped_column(default=0)
+    contact_signature:Mapped[str]=mapped_column(String(64),default='')
+    evidence_by:Mapped[str]=mapped_column(String(120),default='')
+    evidence_at:Mapped[str]=mapped_column(String(40),default='')
+class ContactSign(Base):
+    __tablename__='contact_signs'
+    __table_args__=(UniqueConstraint('interpretation_id','key'),)
+    id:Mapped[int]=mapped_column(primary_key=True)
+    interpretation_id:Mapped[int]=mapped_column(ForeignKey('interpretations.id'))
+    # key=界面下方层段的 strata.id：界面身份随层行走，插入/合并层不会让别的界面签认错位
+    key:Mapped[str]=mapped_column(String(40))
+    seq:Mapped[int]=mapped_column(default=0)
+    depth_m:Mapped[float]=mapped_column(Float)
+    epoch:Mapped[int]=mapped_column(default=0)
+    signature:Mapped[str]=mapped_column(String(64))
+    evidence:Mapped[str]=mapped_column(String(600),default='')
+    evidence_by:Mapped[str]=mapped_column(String(120),default='')
+    evidence_at:Mapped[str]=mapped_column(String(40),default='')
+    state:Mapped[str]=mapped_column(String(20),default='valid')
+    signed_by:Mapped[str]=mapped_column(String(120),default='')
+    signed_at:Mapped[str]=mapped_column(String(40),default='')
 class SampleInterval(Base):
     __tablename__='sample_intervals'
     __table_args__=(CheckConstraint('start_m>=0 AND end_m>start_m'),)
@@ -78,6 +102,9 @@ class SampleInterval(Base):
     purpose:Mapped[str]=mapped_column(String(200))
     destructive:Mapped[bool]=mapped_column(Boolean,default=True)
     state:Mapped[str]=mapped_column(String(20),default='planned')
+    # 放行切样时冻结的接触面签认版本，用于之后核验界面是否被挪动
+    gate_epoch:Mapped[int]=mapped_column(default=0)
+    gate_signatures:Mapped[dict]=mapped_column(JSON,default=dict)
 class Seal(Base):
     __tablename__='seals'
     id:Mapped[int]=mapped_column(primary_key=True)

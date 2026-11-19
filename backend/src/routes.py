@@ -2,15 +2,15 @@ from fastapi import APIRouter,Depends
 from sqlalchemy import select
 from .database import Session
 from .security import current,allow
-from .common import pack,audit,hole
-from .models import Borehole,CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision,Audit
-from .schemas import HoleInput,RunInput,ReadingInput,MissingInput,Reason,BoreholeRef,Layers,SampleInput,SealInput,CustodyInput,RevisionInput
+from .common import pack,audit,hole,get
+from .models import Borehole,CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision,Audit,ContactSign
+from .schemas import HoleInput,RunInput,ReadingInput,MissingInput,Reason,BoreholeRef,Layers,SampleInput,SealInput,CustodyInput,RevisionInput,ContactSignInput
 from . import drilling_service as drilling,strata_service as strata,sample_service as sampling,custody_service as custody,revision_service as revision
 router=APIRouter()
 def permissions(u,controlled=False):allow(u,*(['supervisor']if controlled else['operator','supervisor']))
 @router.get('/register')
 def register(u=Depends(current)):
-    with Session()as s:return {name:[pack(x)for x in s.scalars(select(cls).order_by(cls.id))]for name,cls in [('boreholes',Borehole),('runs',CoreRun),('readings',Reading),('missing',MissingInterval),('interpretations',Interpretation),('strata',Stratum),('samples',SampleInterval),('seals',Seal),('custodies',Custody),('revisions',ColumnRevision)]}
+    with Session()as s:return {name:[pack(x)for x in s.scalars(select(cls).order_by(cls.id))]for name,cls in [('boreholes',Borehole),('runs',CoreRun),('readings',Reading),('missing',MissingInterval),('interpretations',Interpretation),('strata',Stratum),('contact_signs',ContactSign),('samples',SampleInterval),('seals',Seal),('custodies',Custody),('revisions',ColumnRevision)]}
 @router.get('/audit')
 def history(u=Depends(current)):
     with Session()as s:return [pack(x)for x in s.scalars(select(Audit).order_by(Audit.id.desc()).limit(35))]
@@ -57,6 +57,19 @@ def interpret(p:BoreholeRef,u=Depends(current)):
 def contacts(id:int,p:Layers,u=Depends(current)):
     permissions(u)
     with Session.begin()as s:return strata.layers(s,id,p,u)
+@router.get('/interpretations/{id}/contacts')
+def contact_list(id:int,u=Depends(current)):
+    with Session()as s:
+        x=get(s,Interpretation,id)
+        return {'contact_version':x.contact_version or 0,'contacts':strata.contact_view(s,id)}
+@router.post('/interpretations/{id}/contacts/{seq}/evidence')
+def contact_evidence(id:int,seq:int,p:Reason,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return strata.evidence(s,id,seq,p,u)
+@router.post('/interpretations/{id}/contacts/{seq}/sign')
+def contact_sign(id:int,seq:int,p:ContactSignInput,u=Depends(current)):
+    permissions(u,True)
+    with Session.begin()as s:return strata.sign(s,id,seq,p,u)
 @router.post('/interpretations/{id}/confirm')
 def confirm(id:int,u=Depends(current)):
     permissions(u,True)
@@ -77,6 +90,12 @@ def revise(id:int,p:SampleInput,u=Depends(current)):
 def cancel(id:int,u=Depends(current)):
     permissions(u)
     with Session.begin()as s:return sampling.cancel(s,id,u)
+@router.get('/samples/{id}/gate')
+def sample_gate(id:int,u=Depends(current)):
+    with Session()as s:
+        x=get(s,SampleInterval,id)
+        ok,msg=strata.gate_ok(s,x)
+        return {'ok':ok,'detail':msg or'放行签认仍与当前接触面一致'}
 @router.post('/seals')
 def seal(p:SealInput,u=Depends(current)):
     permissions(u)

@@ -1,7 +1,8 @@
 from sqlalchemy import select
 from fastapi import HTTPException
-from .models import CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision
+from .models import CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision,ContactSign
 from .common import hole,get,pack,audit
+from . import strata_service as strata
 
 def create(s,p,u):
     h=hole(s,p.borehole_id)
@@ -26,5 +27,9 @@ def freeze(s,id,u):
     if not i:raise HTTPException(409,'须主管确认人工层段')
     samples=s.scalars(select(SampleInterval).where(SampleInterval.borehole_id==h.id,SampleInterval.state!='cancelled')).all()
     if any(v.state!='transferred'for v in samples):raise HTTPException(409,'尚有未完整封签交接样袋，不能冻结')
+    for v in samples:
+        ok,msg=strata.gate_ok(s,v)
+        if not ok:raise HTTPException(409,msg)
+    contact_signs=[pack(v)for v in s.scalars(select(ContactSign).where(ContactSign.interpretation_id==i.id,ContactSign.state=='valid'))]
     ids=[v.id for v in samples];seals=s.scalars(select(Seal).where(Seal.sample_id.in_(ids))).all()if ids else[];sealids=[v.id for v in seals];cust=s.scalars(select(Custody).where(Custody.seal_id.in_(sealids))).all()if sealids else[]
-    x.snapshot={'borehole':pack(h),'runs':[pack(v)for v in runs],'readings':[pack(v)for v in points],'missing':[pack(v)for v in missing],'interpretation':pack(i),'strata':[pack(v)for v in s.scalars(select(Stratum).where(Stratum.interpretation_id==i.id))],'samples':[pack(v)for v in samples],'seals':[pack(v)for v in seals],'custodies':[pack(v)for v in cust]};x.state='frozen';x.frozen_by=u['email'];h.state='frozen';audit(s,u,'冻结柱状图 '+h.code+' '+x.version);return pack(x)
+    x.snapshot={'borehole':pack(h),'runs':[pack(v)for v in runs],'readings':[pack(v)for v in points],'missing':[pack(v)for v in missing],'interpretation':pack(i),'strata':[pack(v)for v in s.scalars(select(Stratum).where(Stratum.interpretation_id==i.id))],'contact_signs':contact_signs,'samples':[pack(v)for v in samples],'seals':[pack(v)for v in seals],'custodies':[pack(v)for v in cust]};x.state='frozen';x.frozen_by=u['email'];h.state='frozen';audit(s,u,'冻结柱状图 '+h.code+' '+x.version);return pack(x)

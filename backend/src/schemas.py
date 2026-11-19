@@ -40,6 +40,11 @@ class SampleInput(Clean):
     end_m:float=Field(gt=0)
     purpose:str=Field(min_length=2,max_length=200)
     destructive:bool=True
+    gate_epoch:int=0
+    gate_signatures:dict={}
+class ContactSignInput(Clean):
+    epoch:int
+    signature:str=Field(min_length=64,max_length=64)
 class SealInput(Clean):
     sample_id:int
     code:str=Field(min_length=4,max_length=60)
